@@ -1,6 +1,6 @@
 alias IntroGenStage.Utils
 
-defmodule IntroGenStage.PayloadProducer do
+defmodule IntroGenStage.PayloadProducer3 do
   use GenStage
   require Logger
 
@@ -40,7 +40,7 @@ defmodule IntroGenStage.PayloadProducer do
   end
 end
 
-defmodule IntroGenStage.PayloadAggregator do
+defmodule IntroGenStage.PayloadAggregator3 do
   use GenStage
   require Logger
 
@@ -49,7 +49,7 @@ defmodule IntroGenStage.PayloadAggregator do
   # Client
 
   def start_link(opts) do
-    GenStage.start_link(__MODULE__, opts, name: __MODULE__)
+    GenStage.start_link(__MODULE__, opts, name: opts[:name])
   end
 
   def process(event, timeout \\ 5000) do
@@ -58,10 +58,13 @@ defmodule IntroGenStage.PayloadAggregator do
 
   # Server (callbacks)
 
-  def init(_opts) do
+  def init(opts) do
     Process.send_after(self(), :tick, @interval)
 
-    {:producer_consumer, %{}, subscribe_to: [IntroGenStage.PayloadProducer]}
+    selector = fn (%{device_id: device_id}) -> :erlang.phash2(device_id, opts[:size]) === opts[:id] end
+    subscribe_to = Enum.map(opts[:publishers], &({&1, selector: selector}))
+
+    {:producer_consumer, %{}, subscribe_to: subscribe_to}
   end
 
   def handle_events(events, _from, state) do
@@ -85,17 +88,17 @@ defmodule IntroGenStage.PayloadAggregator do
   end
 end
 
-defmodule IntroGenStage.PayloadWriter do
+defmodule IntroGenStage.PayloadWriter3 do
   use GenStage
   require Logger
 
 
   def start_link(opts) do
-    GenStage.start_link(__MODULE__, opts, name: __MODULE__)
+    GenStage.start_link(__MODULE__, opts)
   end
 
-  def init(_opts) do
-    {:consumer, :state_doesnt_matter, subscribe_to: [IntroGenStage.PayloadAggregator]}
+  def init(opts) do
+    {:consumer, :state_doesnt_matter, subscribe_to: opts[:publishers]}
   end
 
   def handle_events(events, _from, state) do

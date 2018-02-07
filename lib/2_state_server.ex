@@ -3,7 +3,7 @@ defmodule IntroGenStage.StateServer do
   require Logger
   alias IntroGenStage.Utils
 
-  @interval 1000
+  @interval 5000
 
   # Client
 
