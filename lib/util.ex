@@ -1,35 +1,46 @@
 defmodule IntroGenStage.Utils do
   require Logger
 
-  def flush_expired(state) do
+  def update_all(state) do
     state
     |> Map.keys()
-    |> Enum.reduce(state, fn (key, acc) -> 
+    |> Enum.reduce({state, []}, fn (key, {acc, payloads}) -> 
       {device_id, content_id} = parse_state_key(key)
       %{position: position, time: time} = Map.get(acc, key)
-      update_or_flush(acc, %{device_id: device_id, content_id: content_id, position: position, time: time})
+      payload = %{device_id: device_id, content_id: content_id, position: position, time: time}
+      payloads = if expired?(acc, payload), do: [payload | payloads], else: payloads
+      new_acc = update(acc, payload)
+      {new_acc, payloads}
     end)
   end
 
-  def update_or_flush(state, payload) do
+  def update(state, payload) do
     key = get_state_key({payload.device_id, payload.content_id})
     new_value = %{position: payload.position, time: payload.time}
 
     {_, new_state} = Map.get_and_update(state, key, fn old_value ->
       case old_value do
+        nil ->
+          {nil, new_value}
         %{position: position, time: time} ->
-          if payload.time + 1000 > now() do
-            flush(payload)
+          if expired?(state, payload) do
             # remove key from state
             :pop
           else
             {old_value, new_value}
           end
-        nil ->
-          {nil, new_value}
       end
     end)
+
     new_state
+  end
+
+  def expired?(state, payload) do
+    key = get_state_key({payload.device_id, payload.content_id})
+    case Map.get(state, key) do
+      %{time: time} -> payload.time + 1000 > now() 
+      nil -> false
+    end
   end
 
   def flush(payload) do
