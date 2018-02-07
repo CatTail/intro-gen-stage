@@ -25,7 +25,10 @@ defmodule IntroGenStage.StateServer do
   def handle_call({:process, event}, _from, state) do
     payload = Utils.transform(event)
 
-    new_state = Utils.update_or_flush(state, payload)
+    if Utils.expired?(state, payload) do
+      Utils.flush(payload)
+    end
+    new_state = Utils.update(state, payload)
 
     {:reply, :ok, new_state}
   end
@@ -39,7 +42,8 @@ defmodule IntroGenStage.StateServer do
     Logger.info("tick #{inspect state}")
 
     # iterate all payload and flush the timeout one
-    new_state = Utils.flush_expired(state)
+    {new_state, payloads} = Utils.update_all(state)
+    Enum.each(payloads, &Utils.flush/1)
 
     Process.send_after(self(), :tick, @interval)
     {:noreply, new_state}

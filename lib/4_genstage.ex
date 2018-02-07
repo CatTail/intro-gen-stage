@@ -48,8 +48,8 @@ defmodule IntroGenStage.PayloadAggregator do
 
   # Client
 
-  def start_link() do
-    GenStage.start_link(__MODULE__, %{})
+  def start_link(opts) do
+    GenStage.start_link(__MODULE__, opts, name: opts[:name])
   end
 
   def process(event, timeout \\ 5000) do
@@ -58,32 +58,56 @@ defmodule IntroGenStage.PayloadAggregator do
 
   # Server (callbacks)
 
-  def init(state) do
+  def init(opts) do
     Process.send_after(self(), :tick, @interval)
 
-    {:consumer, state, subscribe_to: [IntroGenStage.PayloadProducer]}
+    selector = fn (%{device_id: device_id}) -> :erlang.phash2(device_id, opts[:size]) === opts[:id] end
+    subscribe_to = Enum.map(opts[:publishers], &({&1, selector: selector}))
+
+    {:producer_consumer, %{}, subscribe_to: subscribe_to}
   end
 
   def handle_events(events, _from, state) do
-    new_state = Enum.reduce(events, state, fn (event, acc) ->
-      Utils.update_or_flush(state, event)
+    {new_state, payloads} = Enum.reduce(events, {state, []}, fn (event, {acc, payloads}) ->
+      payloads = if Utils.expired?(acc, event), do: [event | payloads], else: payloads
+      new_state = Utils.update(acc, event)
+      {new_state, payloads}
     end)
 
-    {:noreply, [], new_state}
+    {:noreply, payloads, new_state}
   end
 
   def handle_info(:tick, state) do
-    Logger.info("tick #{inspect state}")
+    Logger.info("tick #{inspect self()} #{inspect state}")
 
     # iterate all payload and flush the timeout one
-    new_state = Utils.flush_expired(state)
+    {new_state, payloads} = Utils.update_all(state)
 
     Process.send_after(self(), :tick, @interval)
-    {:noreply, [], new_state}
+    {:noreply, payloads, new_state}
   end
 end
 
 defmodule IntroGenStage.PayloadWriter do
   use GenStage
   require Logger
+
+
+  def start_link(opts) do
+    GenStage.start_link(__MODULE__, opts)
+  end
+
+  def init(opts) do
+    {:consumer, :state_doesnt_matter, subscribe_to: opts[:publishers]}
+  end
+
+  def handle_events(events, _from, state) do
+    for event <- events do
+      :timer.sleep(1000)
+      Utils.flush(event)
+    end
+
+    # As a consumer we never emit events
+    {:noreply, [], state}
+  end
 end
