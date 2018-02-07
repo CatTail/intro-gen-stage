@@ -11,6 +11,14 @@ StateServer.process(state_server, event)
 alias IntroGenStage.Producer
 alias IntroGenStage.ProducerConsumer
 alias IntroGenStage.Consumer
-{_, source} = Producer.start_link()
-{_, flow} = ProducerConsumer.start_link()
-{_, sink} = Consumer.start_link()
+Producer.start_link()
+ProducerConsumer.start_link()
+Consumer.start_link()
+
+alias IntroGenStage.PayloadProducer
+alias IntroGenStage.PayloadAggregator
+PayloadProducer.start_link()
+PayloadAggregator.start_link()
+PayloadAggregator.start_link()
+event = %{device_id: "xxx-xxx-xxx", ctx: "123", value: "50.5"}
+PayloadProducer.process(event)
